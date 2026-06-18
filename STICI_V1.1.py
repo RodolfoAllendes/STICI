@@ -37,16 +37,15 @@ import psutil
 import shutil
 import sys
 import tensorflow as tf
-import tensorflow.keras.backend as K
-import tensorflow_addons as tfa
+import keras
+import keras.backend as K
 from joblib import Parallel, delayed
 from sklearn import metrics
 from sklearn.model_selection import train_test_split
-from tensorflow import keras
-from tensorflow.keras import constraints
-from tensorflow.keras import initializers
-from tensorflow.keras import layers
-from tensorflow.keras import regularizers
+from keras import constraints
+from keras import initializers
+from keras import layers
+from keras import regularizers
 from tensorflow.python.saved_model import signature_constants
 from tensorflow.python.saved_model import tag_constants
 # from icecream import ic
@@ -74,7 +73,7 @@ def pprint(text):
 pprint("Tensorflow version " + tf.__version__)
 
 SUPPORTED_FILE_FORMATS = {"vcf", "csv", "tsv"}
-keras.saving.get_custom_objects().clear()
+keras.utils.get_custom_objects().clear()
 
 
 @keras.saving.register_keras_serializable(package="MyLayers")
@@ -223,7 +222,7 @@ class CatEmbeddings(layers.Layer):
             trainable=True, name='cat_embeddings',
             regularizer=self.embeddings_regularizer,
             constraint=self.embeddings_constraint,
-            experimental_autocast=False
+            dtype='float32'
         )
         self.positions = tf.range(start=0, limit=self.n_snps, delta=1)
 
@@ -441,8 +440,8 @@ import tensorflow as tf
 class ImputationLoss(tf.keras.losses.Loss):
     def __init__(self, use_r2_loss=True, **kwargs):
         super(ImputationLoss, self).__init__(**kwargs)
-        self.ce_loss_obj = tf.keras.losses.CategoricalCrossentropy(reduction=tf.keras.losses.Reduction.SUM)
-        self.kld_loss_obj = tf.keras.losses.KLDivergence(reduction=tf.keras.losses.Reduction.SUM)
+        self.ce_loss_obj = tf.keras.losses.CategoricalCrossentropy(reduction='sum')
+        self.kld_loss_obj = tf.keras.losses.KLDivergence(reduction='sum')
         self.use_r2_loss = use_r2_loss
 
     def calculate_Minimac_R2(self, pred_alt_allele_probs, gt_alt_af):
@@ -501,8 +500,7 @@ def create_model(args):
                              attention_range=args["chunk_overlap"],
                              offset_before=args["offset_before"],
                              offset_after=args["offset_after"])
-    optimizer = tfa.optimizers.LAMB(learning_rate=args["lr"])
-    # optimizer = tf.optimizers.AdamW(learning_rate=args["lr"], weight_decay=1e-5)
+    optimizer = tf.keras.optimizers.Lamb(learning_rate=args["lr"])
     model.compile(optimizer, loss=ImputationLoss(use_r2_loss=args["use_r2"]),
                   metrics=tf.keras.metrics.CategoricalAccuracy())
     return model
@@ -1184,7 +1182,7 @@ def train_the_model(args) -> None:
 
 
 def impute_the_target(args):
-    from tensorflow.keras import mixed_precision
+    from keras import mixed_precision
 
     mixed_precision.set_global_policy('mixed_float16')
 
