@@ -224,7 +224,6 @@ class CatEmbeddings(layers.Layer):
             constraint=self.embeddings_constraint,
             dtype='float32'
         )
-        self.positions = tf.range(start=0, limit=self.n_snps, delta=1)
 
     def get_config(self):
         config = super().get_config()
@@ -242,14 +241,14 @@ class CatEmbeddings(layers.Layer):
                 "n_snps": self.n_snps,
 
                 "embedding": self.embedding.numpy(),
-                "positions": self.positions.numpy(),
             }
         )
         return config
 
     def call(self, inputs):
+        positions = tf.range(start=0, limit=self.n_snps, delta=1)
         self.immediate_result = tf.einsum('ijk,kl->ijl', inputs, self.embedding)
-        return self.immediate_result + self.position_embedding(self.positions)
+        return self.immediate_result + self.position_embedding(positions)
 
 
 @keras.saving.register_keras_serializable(package="MyLayers")
@@ -466,26 +465,56 @@ class ImputationLoss(tf.keras.losses.Loss):
             group_size = 4
             num_full_groups = batch_size // group_size
             num_remainder_samples = batch_size % group_size
+            n_variants = tf.shape(y_true)[1]
+            n_alleles = tf.shape(y_true)[2]
 
-            y_true_grouped = tf.reshape(y_true[:num_full_groups * group_size], (num_full_groups, group_size) + tuple(y_true.shape[1:]))
-            y_pred_grouped = tf.reshape(y_pred[:num_full_groups * group_size], (num_full_groups, group_size) + tuple(y_pred.shape[1:]))
+            y_true_grouped = tf.reshape(
+                y_true[:num_full_groups * group_size],
+                [num_full_groups, group_size, n_variants, n_alleles]
+            )
+            y_pred_grouped = tf.reshape(
+                y_pred[:num_full_groups * group_size],
+                [num_full_groups, group_size, n_variants, n_alleles]
+            )
 
-            r2_loss = 0.0
-            for i in range(num_full_groups):
-                gt_alt_af = tf.cast(tf.math.count_nonzero(tf.argmax(y_true_grouped[i], axis=-1), axis=0), tf.int32) / group_size
+            def compute_group_r2(inputs):
+                y_true_g, y_pred_g = inputs
+                gt_alt_af = tf.cast(
+                    tf.math.count_nonzero(tf.argmax(y_true_g, axis=-1), axis=0),
+                    tf.int32
+                ) / group_size
                 gt_alt_af = tf.cast(gt_alt_af, tf.float32)
-                pred_alt_allele_probs = tf.reduce_sum(y_pred_grouped[i][:, :, 1:], axis=-1)
-                r2_loss += -tf.reduce_sum(self.calculate_Minimac_R2(pred_alt_allele_probs, gt_alt_af)) * tf.cast(group_size, tf.float32)
+                pred_alt_allele_probs = tf.reduce_sum(y_pred_g[:, :, 1:], axis=-1)
+                return -tf.reduce_sum(
+                    self.calculate_Minimac_R2(pred_alt_allele_probs, gt_alt_af)
+                ) * tf.cast(group_size, tf.float32)
 
-            if num_remainder_samples > 0:
+            group_r2_losses = tf.map_fn(
+                compute_group_r2,
+                (y_true_grouped, y_pred_grouped),
+                fn_output_signature=tf.float32
+            )
+            r2_loss = tf.reduce_sum(group_r2_losses)
+
+            def compute_remainder_r2():
                 remainder_start_index = num_full_groups * group_size
-                y_true_remainder = y_true[remainder_start_index:]
-                y_pred_remainder = y_pred[remainder_start_index:]
-
-                gt_alt_af = tf.cast(tf.math.count_nonzero(tf.argmax(y_true_remainder, axis=-1), axis=0), tf.int32) / num_remainder_samples
+                y_true_r = y_true[remainder_start_index:]
+                y_pred_r = y_pred[remainder_start_index:]
+                gt_alt_af = tf.cast(
+                    tf.math.count_nonzero(tf.argmax(y_true_r, axis=-1), axis=0),
+                    tf.int32
+                ) / num_remainder_samples
                 gt_alt_af = tf.cast(gt_alt_af, tf.float32)
-                pred_alt_allele_probs = tf.reduce_sum(y_pred_remainder[:, :, 1:], axis=-1)
-                r2_loss += -tf.reduce_sum(self.calculate_Minimac_R2(pred_alt_allele_probs, gt_alt_af)) * tf.cast(num_remainder_samples, tf.float32)
+                pred_alt_allele_probs = tf.reduce_sum(y_pred_r[:, :, 1:], axis=-1)
+                return -tf.reduce_sum(
+                    self.calculate_Minimac_R2(pred_alt_allele_probs, gt_alt_af)
+                ) * tf.cast(num_remainder_samples, tf.float32)
+
+            r2_loss += tf.cond(
+                num_remainder_samples > 0,
+                compute_remainder_r2,
+                lambda: tf.constant(0.0)
+            )
 
             total_loss += r2_loss
         return total_loss
@@ -502,7 +531,7 @@ def create_model(args):
                              offset_after=args["offset_after"])
     optimizer = tf.keras.optimizers.Lamb(learning_rate=args["lr"])
     model.compile(optimizer, loss=ImputationLoss(use_r2_loss=args["use_r2"]),
-                  metrics=tf.keras.metrics.CategoricalAccuracy())
+                  metrics=[tf.keras.metrics.CategoricalAccuracy()])
     return model
 
 
@@ -1156,7 +1185,7 @@ def train_the_model(args) -> None:
         validation_steps = len(x_valid_indices) // BATCH_SIZE
         del ref_set
         K.clear_session()
-        callbacks = create_callbacks(save_path=f"{args.save_dir}/models/w_{w}/cp.ckpt")
+        callbacks = create_callbacks(save_path=f"{args.save_dir}/models/w_{w}/cp.keras")
         model_args = {
             "embedding_dim": args.embed_dim,
             "num_heads": args.na_heads,
@@ -1174,7 +1203,7 @@ def train_the_model(args) -> None:
                                 validation_data=valid_dataset,
                                 validation_steps=validation_steps,
                                 callbacks=callbacks, verbose=args.verbose)
-            model.save(f"{args.save_dir}/models/w_{w}.ckpt")
+            model.save(f"{args.save_dir}/models/w_{w}.keras")
             # tf.saved_model.save(model, f"{args.save_dir}/models/w_{w}.keras")
             chunks_done[w] = True
             save_chunk_status(args.save_dir, chunks_done)
@@ -1253,7 +1282,7 @@ def impute_the_target(args):
 
         else:
             model = tf.keras.models.load_model(
-                f"{args.save_dir}/models/w_{w}.ckpt",
+                f"{args.save_dir}/models/w_{w}.keras",
                 custom_objects=custom_objects,
                 compile=False
             )
