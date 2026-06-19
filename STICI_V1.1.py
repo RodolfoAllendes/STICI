@@ -1130,6 +1130,11 @@ def train_the_model(args) -> None:
     assert args.min_mr > 0
     assert args.max_mr >= args.min_mr
     NUM_EPOCHS = args.epochs
+    if getattr(args, 'use_mixed_precision', False):
+        from keras import mixed_precision
+        mixed_precision.set_global_policy('mixed_bfloat16')
+        pprint("Mixed precision: bfloat16 enabled")
+
     strategy = tf.distribute.MirroredStrategy(cross_device_ops=tf.distribute.ReductionToOneDevice())
     N_REPLICAS = strategy.num_replicas_in_sync
     pprint(f"Num gpus to be used: {N_REPLICAS}")
