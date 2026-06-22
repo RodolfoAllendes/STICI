@@ -216,6 +216,8 @@ class CatEmbeddings(layers.Layer):
         self.position_embedding = layers.Embedding(
             input_dim=self.n_snps, output_dim=self.embedding_dim
         )
+        # Build explicitly so .embeddings weight is accessible before the first call.
+        self.position_embedding.build((self.n_snps,))
         self.embedding = self.add_weight(
             shape=(self.num_of_allels, self.embedding_dim),
             initializer=self.embeddings_initializer,
@@ -246,9 +248,10 @@ class CatEmbeddings(layers.Layer):
         return config
 
     def call(self, inputs):
-        positions = tf.range(start=0, limit=self.n_snps, delta=1)
         self.immediate_result = tf.einsum('ijk,kl->ijl', inputs, self.embedding)
-        return self.immediate_result + self.position_embedding(positions)
+        # Access the weight matrix directly instead of calling Embedding(tf.range(...)).
+        # tf.range in call() causes graph-scope errors in distributed inference.
+        return self.immediate_result + self.position_embedding.embeddings
 
 
 @keras.saving.register_keras_serializable(package="MyLayers")
