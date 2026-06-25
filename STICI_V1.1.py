@@ -357,6 +357,13 @@ class STICI(keras.Model):
                  dropout_rate=0.25,
                  attention_range=64,
                  **kwargs):
+        # Backward compat: discard build-time keys that old get_config() wrote.
+        # get_config() now only serialises __init__ parameters, so newly saved
+        # models won't contain these — but models saved before this fix will.
+        for _k in ('in_channel', 'seq_len', 'chunk_starts', 'chunk_ends',
+                   'mask_starts', 'mask_ends', 'chunkers', 'concat_layer',
+                   'embedding', 'after_concat_layer', 'last_conv'):
+            kwargs.pop(_k, None)
         super(STICI, self).__init__(**kwargs)
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -389,31 +396,14 @@ class STICI(keras.Model):
         super(STICI, self).build(input_shape)
 
     def get_config(self):
+        import inspect
         config = super().get_config()
-        config.update(
-            {
-                "embed_dim": self.embed_dim,
-                "num_heads": self.num_heads,
-                "offset_before": self.offset_before,
-                "offset_after": self.offset_after,
-                "chunk_size": self.chunk_size,
-                "activation": self.activation,
-                "dropout_rate": self.dropout_rate,
-                "attention_range": self.attention_range,
-                "in_channel": self.in_channel,
-                "seq_len": self.seq_len,
-
-                "chunk_starts": self.chunk_starts,
-                "chunk_ends": self.chunk_ends,
-                "mask_starts": self.mask_starts,
-                "mask_ends": self.mask_ends,
-                "chunkers": self.chunkers,
-                "concat_layer": self.concat_layer,
-                "embedding": self.embedding,
-                "after_concat_layer": self.after_concat_layer,
-                "last_conv": self.last_conv,
-            }
-        )
+        # Only serialise __init__ parameters — build() attributes are recomputed
+        # from input shape on load and must not be passed back to __init__.
+        for name in inspect.signature(STICI.__init__).parameters:
+            if name in ('self', 'kwargs') or not hasattr(self, name):
+                continue
+            config[name] = getattr(self, name)
         return config
 
     def call(self, inputs, training=False):
