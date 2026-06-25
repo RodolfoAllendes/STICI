@@ -1,0 +1,15 @@
+Bootstrap: docker
+From: continuumio/miniconda3
+
+%files
+    STICI1.yml /environment.yml
+
+%post
+    conda env create -f /environment.yml -n stici
+    conda clean -a
+
+%environment
+    export PATH=/opt/conda/envs/stici/bin:$PATH
+
+%runscript
+    exec python "$@"
