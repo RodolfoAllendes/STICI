@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=stici_train
+#SBATCH --job-name=stici_impute
 #SBATCH --partition=batch
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -12,21 +12,33 @@
 mkdir -p logs
 
 # has to be the same file used for training
-REF=./data/beadchip_reference_all_minaf_05_snps_hwe_1e-2_filtered_train.vcf.gz
+REF=./data/24donor/22.phased_24donor_reference.vcf.gz
 # STICI saves training and impute results to the same directory, it will read
 # the model from this location
-SAVE_DIR=./training_results/snp/bench_ep200
-# the file to be imputed
-TARGET=./data/test_data_beadchip_hwe_filtered.vcf.gz
+SAVE_DIR=./training_results/24donor/22_ep200
+# directory containing per-donor target files
+TARGET_DIR=./data/24donor/original
 
 export SINGULARITYENV_LD_LIBRARY_PATH=/usr/local/cuda-12.8/targets/x86_64-linux/lib
 
-singularity exec --nv \
-    -B /usr/local/cuda-12.8:/usr/local/cuda-12.8 \
-    stici.sif \
-    python STICI_V1.1.py \
-    --mode impute \
-    --ref "$REF" \
-    --save-dir "$SAVE_DIR" \
-    --target "$TARGET" \
-    --tihp true
+mkdir -p "$SAVE_DIR/out"
+
+for TARGET in "$TARGET_DIR"/*_22_mapphased.vcf.gz; do
+    fname=$(basename "$TARGET" .vcf.gz)
+    echo "Imputing $fname ..."
+
+    singularity exec --nv \
+        -B /usr/local/cuda-12.8:/usr/local/cuda-12.8 \
+        ~/stici.sif \
+        python STICI_V1.1.py \
+        --mode impute \
+        --ref "$REF" \
+        --save-dir "$SAVE_DIR" \
+        --target "$TARGET" \
+        --tihp true
+
+    # STICI always writes to $SAVE_DIR/out/ligated_results.vcf.gz — rename per donor
+    mv "$SAVE_DIR/out/ligated_results.vcf.gz" "$SAVE_DIR/out/${fname}_imputed.vcf.gz"
+done
+
+echo "All donors imputed."

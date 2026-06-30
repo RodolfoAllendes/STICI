@@ -34,6 +34,7 @@ training_results/
 
 # Logs and temp files
 *.log
+logs/
 *.tmp
 
 # IDE
