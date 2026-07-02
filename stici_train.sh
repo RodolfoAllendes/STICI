@@ -11,8 +11,13 @@
 
 mkdir -p logs
 
-REF=./data/24donor/22.phased_24donor_reference.vcf.gz # or beadchip_reference_all_minaf_05_snps_hwe_1e-2_filtered_train.vcf.gz
-SAVE_DIR=./training_results/24donor/22_ep200
+# ── 24-donor reference (13,178 variants) ─────────────────────────────────────
+#REF=./data/24donor/22.phased_24donor_reference.vcf.gz
+#SAVE_DIR=./training_results/24donor/22_ep200
+
+# ── 1000G WGS reference, MAF > 0.05 (129,953 variants, ~22 sub-models) ───────
+REF=./data/1kg_wgs/1kGP_high_coverage_Illumina.22.filtered.SNV_INDEL_SV_phased_panel_maf05.vcf.gz
+SAVE_DIR=./training_results/1kg_wgs/22_ep200
 
 export SINGULARITYENV_LD_LIBRARY_PATH=/usr/local/cuda-12.8/targets/x86_64-linux/lib
 

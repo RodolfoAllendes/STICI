@@ -11,11 +11,16 @@
 
 mkdir -p logs
 
-# has to be the same file used for training
-REF=./data/24donor/22.phased_24donor_reference.vcf.gz
-# STICI saves training and impute results to the same directory, it will read
-# the model from this location
-SAVE_DIR=./training_results/24donor/22_ep200
+# has to be the same ref and save-dir used for training
+
+# ── 24-donor reference ────────────────────────────────────────────────────────
+#REF=./data/24donor/22.phased_24donor_reference.vcf.gz
+#SAVE_DIR=./training_results/24donor/22_ep200
+
+# ── 1000G WGS reference, MAF > 0.05 ──────────────────────────────────────────
+REF=./data/1kg_wgs/1kGP_high_coverage_Illumina.22.filtered.SNV_INDEL_SV_phased_panel_maf05.vcf.gz
+SAVE_DIR=./training_results/1kg_wgs/22_ep200
+
 # directory containing per-donor target files
 TARGET_DIR=./data/24donor/original
 
